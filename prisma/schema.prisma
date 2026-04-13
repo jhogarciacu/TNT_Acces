@@ -1,0 +1,81 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Miembro {
+  id                    Int      @id @default(autoincrement())
+  cedula                String?  @unique
+  nombre                String
+  huella_id             Int      @unique
+  telefono              String?
+  plan_id               Int?
+  estado                String   @default("activo") // activo, expirado
+  membership_start_date DateTime @default(now())
+  membership_end_date   DateTime
+  foto_url              String?
+
+  // Relation
+  plan     Plan?    @relation(fields: [plan_id], references: [id])
+  accesos  Acceso[]
+}
+
+model Plan {
+  id            Int       @id @default(autoincrement())
+  nombre        String
+  precio        Float
+  duracion_dias Int
+  activo        Boolean   @default(true)
+  descripcion   String?
+  miembros      Miembro[]
+}
+
+model Dispositivo {
+  id          String   @id
+  nombre      String
+  ubicacion   String?
+  estado      String   @default("offline") // online, offline
+  ultimo_ping DateTime @default(now())
+  ip          String?
+  Acceso      Acceso[]
+}
+
+model Acceso {
+  id             Int      @id @default(autoincrement())
+  miembro_id     Int?
+  timestamp      DateTime @default(now())
+  resultado      String   // permitido, permitido_gracia, denegado, denegado_vencido
+  confianza      Int
+  dispositivo_id String
+
+  // Relations
+  miembro     Miembro?    @relation(fields: [miembro_id], references: [id])
+  dispositivo Dispositivo @relation(fields: [dispositivo_id], references: [id])
+}
+
+model Admin {
+  id       Int    @id @default(autoincrement())
+  username String @unique
+  password String
+}
+
+model MiembroEliminado {
+  id                Int      @id @default(autoincrement())
+  cedula            String?
+  nombre            String
+  huella_id         Int
+  telefono          String?
+  fecha_registro    DateTime
+  fecha_eliminacion DateTime @default(now())
+  motivo            String?
+}
+
+model HuellaDisponible {
+  id        Int      @id @default(autoincrement())
+  huella_id Int      @unique
+  freed_at  DateTime @default(now())
+}
