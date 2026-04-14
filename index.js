@@ -344,6 +344,6 @@ app.delete('/api/free-huella/:huellaId', async (req, res) => {
 
 
 const PORT = process.env.PORT || 4000;
-server.listen(PORT, () => {
-  console.log(`🚀 Backend running on http://localhost:${PORT}`);
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Backend running on port ${PORT}`);
 });
