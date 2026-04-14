@@ -14,6 +14,9 @@ const prisma = new PrismaClient();
 app.use(cors());
 app.use(express.json());
 
+console.log('🏁 Iniciando servidor TNTControl...');
+console.log('📡 Conectando a Base de Datos...');
+
 // -----------------------------------------------------
 // 1. MQTT Setup (HiveMQ / External Broker)
 // -----------------------------------------------------
@@ -343,7 +346,9 @@ app.delete('/api/free-huella/:huellaId', async (req, res) => {
 });
 
 
+console.log('📌 Configurando puerto y lanzando servidor...');
 const PORT = process.env.PORT || 4000;
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Backend running on port ${PORT}`);
+  console.log(`🚀 SERVIDOR ACTIVO EN PUERTO: ${PORT}`);
+  console.log(`🌍 Acceso externo habilitado en 0.0.0.0`);
 });
