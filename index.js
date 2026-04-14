@@ -18,8 +18,8 @@ console.log('🏁 Iniciando servidor TNTControl...');
 console.log('📡 Conectando a Base de Datos...');
 
 console.log(`📡 Intentando conectar MQTT a: ${process.env.MQTT_BROKER_URL}`);
-console.log(`👤 Usuario detectado: ${process.env.MQTT_USERNAME ? 'SÍ' : 'NO'}`);
-console.log(`🔑 Clave detectada: ${process.env.MQTT_PASSWORD ? (process.env.MQTT_PASSWORD[0] + '...' + process.env.MQTT_PASSWORD.slice(-1)) : 'NO'}`);
+console.log(`👤 Usuario detectado: [${process.env.MQTT_USERNAME}] (Longitud: ${process.env.MQTT_USERNAME?.length})`);
+console.log(`🔑 Clave detectada: [${process.env.MQTT_PASSWORD ? (process.env.MQTT_PASSWORD[0] + '...' + process.env.MQTT_PASSWORD.slice(-1)) : 'NO'}] (Longitud: ${process.env.MQTT_PASSWORD?.length})`);
 
 const mqttClient = mqtt.connect(process.env.MQTT_BROKER_URL || 'mqtt://broker.hivemq.com', {
   username: process.env.MQTT_USERNAME || '',
