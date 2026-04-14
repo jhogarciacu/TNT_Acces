@@ -79,18 +79,23 @@ mqttClient.on('message', async (topic, message) => {
         return; // Don't log this as a normal access event
       }
 
-      // NORMAL ACCESS EVENT: { resultado: "permitido"|"denegado", huella_id: 1, confianza: 186, dispositivo: "esp32c6..." }
-      let finalResult = 'denegado';
+      // RECIBIMOS EVENTO DE ACCESO: { resultado: "permitido"|"denegado", huella_id: 3, confianza: 160, dispositivo: "esp32c6..." }
+      let finalResult = payload.resultado; // Confiamos inicialmente en lo que dice el sensor
       let member = null;
 
       if (payload.huella_id !== undefined && payload.huella_id !== null) {
-        member = await prisma.miembro.findUnique({ where: { huella_id: payload.huella_id } });
+        member = await prisma.miembro.findUnique({ 
+          where: { huella_id: parseInt(payload.huella_id) },
+          include: { plan: true }
+        });
 
         if (member) {
           const now = new Date();
           const endDate = new Date(member.membership_end_date);
+          
+          // Margen de gracia (2 días después de la fecha de fin)
           const gracePeriodEnd = new Date(endDate);
-          gracePeriodEnd.setDate(gracePeriodEnd.getDate() + 2); // 2 days grace
+          gracePeriodEnd.setDate(gracePeriodEnd.getDate() + 2);
 
           if (now <= endDate) {
             finalResult = 'permitido';
@@ -98,6 +103,11 @@ mqttClient.on('message', async (topic, message) => {
             finalResult = 'permitido_gracia';
           } else {
             finalResult = 'denegado_vencido';
+          }
+        } else {
+          // Si el sensor dice permitido pero no está en DB, es una huella antigua o desconocida
+          if (finalResult === 'permitido') {
+            finalResult = 'denegado'; // Marcamos como desconocido en el sistema
           }
         }
       }
@@ -147,12 +157,23 @@ mqttClient.on('message', async (topic, message) => {
 // Get Dashboard Stats
 app.get('/api/stats', async (req, res) => {
   try {
-    const todayStart = new Date(new Date().setHours(0,0,0,0));
+    const todayStart = new Date();
+    todayStart.setHours(0,0,0,0);
+    
+    // Total de ingresos hoy (solo los permitidos)
     const totalAccesses = await prisma.acceso.count({
-      where: { timestamp: { gte: todayStart } }
+      where: { 
+        timestamp: { gte: todayStart },
+        resultado: { in: ['permitido', 'permitido_gracia'] }
+      }
     });
+
+    // Intentos fallidos hoy
     const failedAccesses = await prisma.acceso.count({
-      where: { resultado: { in: ['denegado', 'denegado_vencido'] }, timestamp: { gte: todayStart } }
+      where: { 
+        timestamp: { gte: todayStart },
+        resultado: { in: ['denegado', 'denegado_vencido'] }
+      }
     });
     
     const allMembers = await prisma.miembro.findMany();
