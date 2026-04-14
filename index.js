@@ -17,13 +17,17 @@ app.use(express.json());
 console.log('🏁 Iniciando servidor TNTControl...');
 console.log('📡 Conectando a Base de Datos...');
 
-// -----------------------------------------------------
-// 1. MQTT Setup (HiveMQ / External Broker)
-// -----------------------------------------------------
+console.log(`📡 Intentando conectar MQTT a: ${process.env.MQTT_BROKER_URL}`);
+console.log(`👤 Usuario detectado: ${process.env.MQTT_USERNAME ? 'SÍ' : 'NO'}`);
+console.log(`🔑 Clave detectada: ${process.env.MQTT_PASSWORD ? (process.env.MQTT_PASSWORD[0] + '...' + process.env.MQTT_PASSWORD.slice(-1)) : 'NO'}`);
+
 const mqttClient = mqtt.connect(process.env.MQTT_BROKER_URL || 'mqtt://broker.hivemq.com', {
   username: process.env.MQTT_USERNAME || '',
   password: process.env.MQTT_PASSWORD || '',
   clientId: process.env.MQTT_CLIENT_ID || 'backend_api_' + Math.random().toString(16).substr(2, 8),
+  protocol: 'mqtts',
+  port: 8883,
+  rejectUnauthorized: false, // Útil para despliegues en la nube si hay problemas con el certificado CA
 });
 
 mqttClient.on('error', (err) => {
