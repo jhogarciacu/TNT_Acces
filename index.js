@@ -212,7 +212,7 @@ app.get('/api/stats', async (req, res) => {
 // Send Remote Open Command
 app.post('/api/devices/:id/open', (req, res) => {
   const { id } = req.params;
-  mqttClient.publish('gimnasio/comando', JSON.stringify({ comando: 'abrir', dispositivo: id }));
+  mqttClient.publish('gimnasio/comando', JSON.stringify({ cmd: 'abrir', dispositivo: id }));
   res.json({ success: true, message: 'Open command sent!' });
 });
 
@@ -261,7 +261,12 @@ app.post('/api/members', async (req, res) => {
 // Send Remote Enroll Command
 app.post('/api/devices/:id/enroll', (req, res) => {
   const { id } = req.params;
-  mqttClient.publish('gimnasio/comando', JSON.stringify({ cmd: 'enrolar', dispositivo: id }));
+  const { huella_id } = req.body; // Recibimos el ID desde el frontend
+  mqttClient.publish('gimnasio/comando', JSON.stringify({ 
+    cmd: 'enrolar', 
+    huella_id: parseInt(huella_id), 
+    dispositivo: id 
+  }));
   res.json({ success: true, message: 'Comando enrolar enviado!' });
 });
 
