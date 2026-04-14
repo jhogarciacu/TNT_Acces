@@ -11,23 +11,20 @@ const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
 const prisma = new PrismaClient();
 
-app.use(cors());
-app.use(express.json());
+const brokerUrl = process.env.MQTT_BROKER_URL?.trim();
+const mqttUser = process.env.MQTT_USERNAME?.trim();
+const mqttPass = process.env.MQTT_PASSWORD?.trim();
 
-console.log('🏁 Iniciando servidor TNTControl...');
-console.log('📡 Conectando a Base de Datos...');
+console.log(`📡 Intentando conectar MQTT a: ${brokerUrl}`);
+console.log(`👤 Usuario: [${mqttUser}] (Longitud: ${mqttUser?.length})`);
+console.log(`🔑 Clave detectada (Longitud: ${mqttPass?.length})`);
 
-console.log(`📡 Intentando conectar MQTT a: ${process.env.MQTT_BROKER_URL}`);
-console.log(`👤 Usuario detectado: [${process.env.MQTT_USERNAME}] (Longitud: ${process.env.MQTT_USERNAME?.length})`);
-console.log(`🔑 Clave detectada: [${process.env.MQTT_PASSWORD ? (process.env.MQTT_PASSWORD[0] + '...' + process.env.MQTT_PASSWORD.slice(-1)) : 'NO'}] (Longitud: ${process.env.MQTT_PASSWORD?.length})`);
-
-const mqttClient = mqtt.connect(process.env.MQTT_BROKER_URL || 'mqtt://broker.hivemq.com', {
-  username: process.env.MQTT_USERNAME || '',
-  password: process.env.MQTT_PASSWORD || '',
-  clientId: process.env.MQTT_CLIENT_ID || 'backend_api_' + Math.random().toString(16).substr(2, 8),
-  protocol: 'mqtts',
-  port: 8883,
-  rejectUnauthorized: false, // Útil para despliegues en la nube si hay problemas con el certificado CA
+const mqttClient = mqtt.connect(brokerUrl, {
+  username: mqttUser,
+  password: mqttPass,
+  clientId: process.env.MQTT_CLIENT_ID || 'backend_' + Math.random().toString(16).substr(2, 4),
+  connectTimeout: 4000,
+  reconnectPeriod: 1000,
 });
 
 mqttClient.on('error', (err) => {
