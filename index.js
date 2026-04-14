@@ -8,8 +8,18 @@ require('dotenv').config();
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: '*' } });
+const io = new Server(server, { 
+  cors: { 
+    origin: "*", 
+    methods: ["GET", "POST"],
+    credentials: true
+  },
+  transports: ['websocket', 'polling']
+});
 const prisma = new PrismaClient();
+
+app.use(cors());
+app.use(express.json());
 
 const brokerUrl = process.env.MQTT_BROKER_URL?.trim();
 const mqttUser = process.env.MQTT_USERNAME?.trim();
