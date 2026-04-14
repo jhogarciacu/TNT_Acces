@@ -15,16 +15,12 @@ const brokerUrl = process.env.MQTT_BROKER_URL?.trim();
 const mqttUser = process.env.MQTT_USERNAME?.trim();
 const mqttPass = process.env.MQTT_PASSWORD?.trim();
 
-console.log(`📡 Intentando conectar MQTT a: ${brokerUrl}`);
-console.log(`👤 Usuario: [${mqttUser}] (Longitud: ${mqttUser?.length})`);
-console.log(`🔑 Clave detectada (Longitud: ${mqttPass?.length})`);
-
 const mqttClient = mqtt.connect(brokerUrl, {
   username: mqttUser,
   password: mqttPass,
-  clientId: process.env.MQTT_CLIENT_ID || 'backend_' + Math.random().toString(16).substr(2, 4),
-  connectTimeout: 4000,
-  reconnectPeriod: 1000,
+  clientId: 'backend_' + Math.random().toString(16).substring(2, 10),
+  connectTimeout: 5000,
+  reconnectPeriod: 2000,
 });
 
 mqttClient.on('error', (err) => {
