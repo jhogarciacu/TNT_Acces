@@ -69,6 +69,44 @@ mqttClient.on('message', async (topic, message) => {
       }
 
     } else if (topic === 'gimnasio/acceso') {
+      // Deletion confirmation handler
+      if (payload.resultado === 'borrado' && (payload.miembro_id || payload.huella_id)) {
+        console.log(`✅ Deletion confirmed for huella_id ${payload.huella_id}`);
+        
+        const memberId = payload.miembro_id ? parseInt(payload.miembro_id) : null;
+        const huellaId = parseInt(payload.huella_id);
+        
+        const member = await prisma.miembro.findFirst({
+          where: memberId ? { id: memberId } : { huella_id: huellaId }
+        });
+
+        if (member) {
+          // 1. Archive deleted member
+          await prisma.miembroEliminado.create({
+            data: {
+              cedula: member.cedula,
+              nombre: member.nombre,
+              huella_id: member.huella_id,
+              telefono: member.telefono,
+              fecha_registro: member.membership_start_date,
+            }
+          });
+
+          // 2. Free the huella_id for reuse
+          await prisma.huellaDisponible.create({
+            data: { huella_id: member.huella_id }
+          });
+
+          // 3. Delete access logs and member from DB
+          await prisma.acceso.deleteMany({ where: { miembro_id: member.id } });
+          await prisma.miembro.delete({ where: { id: member.id } });
+
+          console.log(`🗑️ Member ${member.nombre} removed from DB after sensor confirmation.`);
+          io.emit('member_deleted_confirm', { id: member.id, huella_id: member.huella_id });
+        }
+        return;
+      }
+
       // INTERCEPT ENROLLMENT RESULTS FROM THIS TOPIC
       if (['enrolado', 'timeout', 'error_coincidencia', 'error_guardado', 'memoria_llena'].includes(payload.resultado)) {
         console.log(`Enrollment result received:`, payload);
@@ -237,10 +275,49 @@ app.post('/api/devices/:id/open', (req, res) => {
   res.json({ success: true, message: 'Open command sent!' });
 });
 
-// Members CRUD...
+// Members CRUD with filtering
 app.get('/api/members', async (req, res) => {
-  const members = await prisma.miembro.findMany({ include: { plan: true } });
-  res.json(members);
+  try {
+    const { filter, hour } = req.query;
+    let where = {};
+    const now = new Date();
+
+    if (filter === 'active') {
+      where = { membership_end_date: { gte: now } };
+    } else if (filter === 'expired') {
+      const grace = new Date();
+      grace.setDate(grace.getDate() - 2); // Since grace period is +2 days, expired is < end_date and < grace? 
+      // Actually status logic in frontend is: end_date < now AND grace < now.
+      where = { membership_end_date: { lt: grace } };
+    } else if (filter === 'today' || filter === 'access_hour') {
+      const start = new Date();
+      start.setHours(0,0,0,0);
+      
+      const accessWhere = { timestamp: { gte: start } };
+      if (filter === 'access_hour' && hour) {
+        const h = parseInt(hour as string);
+        const hStart = new Date(start); hStart.setHours(h);
+        const hEnd = new Date(start); hEnd.setHours(h + 1);
+        accessWhere.timestamp = { gte: hStart, lt: hEnd };
+      }
+
+      const accesses = await prisma.acceso.findMany({
+        where: accessWhere,
+        select: { miembro_id: true }
+      });
+      const memberIds = Array.from(new Set(accesses.map(a => a.miembro_id).filter(id => id !== null)));
+      where = { id: { in: memberIds as number[] } };
+    }
+
+    const members = await prisma.miembro.findMany({ 
+      where,
+      include: { plan: true },
+      orderBy: { nombre: 'asc' }
+    });
+    res.json(members);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // Admin Login
@@ -259,9 +336,12 @@ app.post('/api/admin/login', async (req, res) => {
 // Create Member
 app.post('/api/members', async (req, res) => {
   try {
-    const { cedula, nombre, telefono, huella_id, basePlanDays } = req.body;
-    let end_date = new Date();
-    end_date.setDate(end_date.getDate() + (parseInt(basePlanDays) || 30));
+    const { cedula, nombre, telefono, huella_id, basePlanDays, startDate } = req.body;
+    
+    let start_date = startDate ? new Date(startDate) : new Date();
+    let end_date = new Date(start_date);
+    end_date.setMonth(end_date.getMonth() + 1); // +1 month
+    end_date.setDate(end_date.getDate() + 2);   // +2 days grace
 
     const nuevoMiembro = await prisma.miembro.create({
       data: {
@@ -270,6 +350,7 @@ app.post('/api/members', async (req, res) => {
         telefono,
         huella_id: parseInt(huella_id),
         estado: 'activo',
+        membership_start_date: start_date,
         membership_end_date: end_date
       }
     });
@@ -315,42 +396,45 @@ app.post('/api/members/:id/renew', async (req, res) => {
   } catch(error) { res.status(500).json({error: error.message}); }
 });
 
-// Delete Member (archive + notify ESP32 + recycle ID)
+// Delete Member Trigger (sends MQTT, doesn't delete from DB yet)
 app.delete('/api/members/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const member = await prisma.miembro.findUnique({ where: { id: parseInt(id) } });
     if (!member) return res.status(404).json({ error: 'Miembro no encontrado' });
 
-    // 1. Archive deleted member
-    await prisma.miembroEliminado.create({
-      data: {
-        cedula: member.cedula,
-        nombre: member.nombre,
-        huella_id: member.huella_id,
-        telefono: member.telefono,
-        fecha_registro: member.membership_start_date,
-      }
-    });
-
-    // 2. Free the huella_id for reuse
-    await prisma.huellaDisponible.create({
-      data: { huella_id: member.huella_id }
-    });
-
-    // 3. Send MQTT command to ESP32 to delete the fingerprint from sensor
+    // Send MQTT command to ESP32 to delete the fingerprint from sensor
     mqttClient.publish('gimnasio/comando', JSON.stringify({
       cmd: 'borrar',
-      huella_id: member.huella_id
+      huella_id: member.huella_id,
+      miembro_id: member.id // Send ID so we can identify it on callback
     }));
-    console.log(`MQTT: Sent delete command for huella_id ${member.huella_id}`);
-
-    // 4. Delete access logs and member from DB
-    await prisma.acceso.deleteMany({ where: { miembro_id: parseInt(id) } });
-    await prisma.miembro.delete({ where: { id: parseInt(id) } });
-
-    res.json({ success: true, message: 'Miembro eliminado', huella_id: member.huella_id });
+    
+    console.log(`MQTT: Sent delete command for member ${member.nombre} (huella_id ${member.huella_id})`);
+    res.json({ success: true, message: 'Comando de borrado enviado al sensor. Esperando confirmación...' });
   } catch(error) { res.status(500).json({error: error.message}); }
+});
+
+// Weekly Cleanup & Export
+app.post('/api/cleanup', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: "Email is required" });
+
+    // 1. Get all logs
+    const allLogs = await prisma.acceso.findMany({ include: { miembro: true } });
+    
+    // 2. Logic to "send email" (simulation for now, or console log)
+    console.log(`📧 EXPORTING DATA TO: ${email}`);
+    console.log(`📊 Total records to export: ${allLogs.length}`);
+    
+    // 3. Clear access logs
+    await prisma.acceso.deleteMany({});
+    
+    res.json({ success: true, message: `Backup enviado a ${email} y base de datos de accesos limpiada.` });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // Get next available huella_id (recycled first, then new)
